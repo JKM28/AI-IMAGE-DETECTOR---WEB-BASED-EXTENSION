@@ -448,20 +448,80 @@ async def detect_face(file: UploadFile = File(...)):
 @app.post("/classify/url")
 async def classify_url(data: ImageURL, use_sightengine: bool = True, models: str = "genai"):
     try:
+        print("\n=== Received URL classification request ===")
+        try:
+            print(f"URL: {data.url}")
+        except Exception:
+            pass
         # Prefer Sightengine if enabled and keys are present
         if use_sightengine and sightengine_enabled():
-            se = sightengine_classify_url(data.url, models=models)
-            if se.get("status") == "success":
-                # For URL flow, we may not know image size without fetching; keep optional
-                return {
-                    "status": "success",
-                    "is_fake": se.get("is_fake", False),
-                    "confidence": se.get("confidence", 0.0),
-                    "model": se.get("model", "sightengine"),
-                    "models_used": [se.get("model", "sightengine")],
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "raw": se.get("raw"),
-                }
+            print("Running Sightengine (URL→bytes path)...")
+            contents = None
+            image_w_h = None
+            try:
+                resp = requests.get(data.url, timeout=15)
+                resp.raise_for_status()
+                contents = resp.content
+                try:
+                    img = Image.open(io.BytesIO(contents)).convert("RGB")
+                    image_w_h = f"{img.width}x{img.height}"
+                except Exception:
+                    image_w_h = None
+            except Exception as fetch_err:
+                print(f"Warning: failed to fetch image bytes for Sightengine, falling back to URL API: {fetch_err}")
+                contents = None
+
+            if contents is not None:
+                se = sightengine_classify_bytes(contents, models=models)
+                if se.get("status") == "success":
+                    try:
+                        if not se.get("is_fake", False):
+                            se_conf = float(se.get("confidence", 0.0))
+                            se["confidence"] = max(0.0, min(1.0, 1.0 - se_conf))
+                    except Exception:
+                        pass
+                    response = {
+                        "status": "success",
+                        "is_fake": se.get("is_fake", False),
+                        "confidence": se.get("confidence", 0.0),
+                        "model": se.get("model", "sightengine"),
+                        "models_used": [se.get("model", "sightengine")],
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "image_size": image_w_h,
+                        "raw": se.get("raw"),
+                    }
+                    try:
+                        print(f"Final response (sightengine bytes): {response}")
+                    except Exception:
+                        pass
+                    return response
+
+            # Fallback to URL API if bytes path failed
+            try:
+                se = sightengine_classify_url(data.url, models=models)
+                if se.get("status") == "success":
+                    try:
+                        if not se.get("is_fake", False):
+                            se_conf = float(se.get("confidence", 0.0))
+                            se["confidence"] = max(0.0, min(1.0, 1.0 - se_conf))
+                    except Exception:
+                        pass
+                    response = {
+                        "status": "success",
+                        "is_fake": se.get("is_fake", False),
+                        "confidence": se.get("confidence", 0.0),
+                        "model": se.get("model", "sightengine"),
+                        "models_used": [se.get("model", "sightengine")],
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "raw": se.get("raw"),
+                    }
+                    try:
+                        print(f"Final response (sightengine url-fallback): {response}")
+                    except Exception:
+                        pass
+                    return response
+            except Exception as se_err:
+                print(f"Sightengine URL fallback failed: {se_err}")
         
         # Fallback: download and evaluate locally
         response = requests.get(data.url, stream=True, timeout=10)
@@ -486,13 +546,18 @@ async def classify_url(data: ImageURL, use_sightengine: bool = True, models: str
         if not results:
             return {"status": "error", "message": "No models were able to process the image"}
         ensemble = ensemble_decision(results)
-        return {
+        response = {
             "status": "success",
             "result": ensemble,
             "models_used": [r["model"] for r in results],
             "timestamp": datetime.utcnow().isoformat(),
             "image_size": f"{image.width}x{image.height}"
         }
+        try:
+            print(f"Final response (fallback local): {response}")
+        except Exception:
+            pass
+        return response
     except requests.exceptions.RequestException as e:
         return {"status": "error", "message": f"Failed to fetch image: {str(e)}"}
     except Exception as e:
@@ -545,6 +610,12 @@ async def classify_file(
             print("Running Sightengine (upload path)...")
             se = sightengine_classify_bytes(contents, models=models)
             if se.get("status") == "success":
+                try:
+                    if not se.get("is_fake", False):
+                        se_conf = float(se.get("confidence", 0.0))
+                        se["confidence"] = max(0.0, min(1.0, 1.0 - se_conf))
+                except Exception:
+                    pass
                 # We can still compute image size locally for convenience
                 try:
                     image = Image.open(io.BytesIO(contents)).convert("RGB")

@@ -2,7 +2,16 @@
 (() => {
   'use strict';
 
-  const ENABLE_PAGE_IMAGE_SCANNING = false;
+  // Dynamic settings loaded from storage
+  let SETTINGS = {
+    realTimeScanning: true,
+    scanInterval: 3,
+    showNotifications: true,
+    clickToDetect: false
+  };
+  let pageScanEnabled = false;
+  let pageScanObserver = null;
+  let pageScanIntervalId = null;
 
   // Configuration
   const CONFIG = {
@@ -71,13 +80,11 @@
   const SHOW_BADGES = false;
   const SHOW_TOASTS = true;
 
-  // Map raw percentage to display percentage per Option B
+  // Map raw percentage to display percentage: if <=20, display = 100 - raw; else unchanged
   function mapDisplayPercent(rawPct) {
-    if (rawPct >= 20) return Math.min(rawPct, 99);
-    if (rawPct <= 0) return 80;
-    if (rawPct === 1) return 81;
-    if (rawPct === 2) return 83; // special case
-    return Math.min(80 + rawPct, 99);
+    const v = Math.round(Number(rawPct) || 0);
+    if (v <= 20) return Math.max(0, Math.min(100, 100 - v));
+    return v;
   }
 
   // Track processed elements to avoid duplicates
@@ -87,29 +94,62 @@
   let currentToastTimer = null;
 
   // Initialize the scanner when the page is fully loaded
-  function initScanner() {
+  async function initScanner() {
     if (!isFacebookPage()) return;
     
     console.log('[Facebook Scanner] Initializing...');
-    
-    if (ENABLE_PAGE_IMAGE_SCANNING) {
-      // Set up mutation observer to watch for new image uploads
-      const observer = new MutationObserver(handleMutations);
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['src']
+    // Load settings once at start
+    try {
+      await new Promise((resolve) => {
+        chrome.storage?.sync?.get({
+          realTimeScanning: true,
+          scanInterval: 3,
+        }, (items) => {
+          SETTINGS.realTimeScanning = !!items.realTimeScanning;
+          SETTINGS.scanInterval = Math.max(1, parseInt(items.scanInterval || 3));
+          resolve();
+        });
       });
-      
-      // Initial scan
-      scanForImages();
-    }
+    } catch (_) {}
+
+    // Apply scanning state
+    setPageScanning(SETTINGS.realTimeScanning);
     
     // Listen for file uploads
     setupUploadListeners();
     
     console.log('[Facebook Scanner] Initialized');
+  }
+
+  function setPageScanning(enable) {
+    if (enable === pageScanEnabled) return;
+    pageScanEnabled = !!enable;
+    if (pageScanEnabled) {
+      // Start observer
+      try {
+        if (!pageScanObserver) {
+          pageScanObserver = new MutationObserver(handleMutations);
+        }
+        pageScanObserver.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['src']
+        });
+      } catch (_) {}
+      // Initial scan and periodic rescans per settings
+      try { scanForImages(); } catch (_) {}
+      clearInterval(pageScanIntervalId);
+      pageScanIntervalId = setInterval(() => {
+        try { scanForImages(); } catch (_) {}
+      }, Math.max(1000, (SETTINGS.scanInterval || 3) * 1000));
+      console.log('[Facebook Scanner] Real-time scanning: ON');
+    } else {
+      try { pageScanObserver && pageScanObserver.disconnect(); } catch (_) {}
+      pageScanObserver = pageScanObserver || null;
+      clearInterval(pageScanIntervalId); pageScanIntervalId = null;
+      console.log('[Facebook Scanner] Real-time scanning: OFF');
+    }
   }
 
   // Check if current page is Facebook
@@ -325,14 +365,14 @@
       if (badge) updateBadge(badge, getResultLabel(result), getResultSeverity(result));
       // Replace analyzing banner with result banner
       clearToasts();
-      const rawPct = Math.round((result.confidence || 0) * 100);
-      const confidencePct = mapDisplayPercent(rawPct);
+      const confidencePct = Math.round((result.confidence || 0) * 100);
+      const complement = Math.max(0, 100 - confidencePct);
       if (result.is_fake) {
-        showNotification('Potential AI-generated', `Confidence: ${confidencePct}%`, 'warning');
+        showNotification('Likely AI-generated', `Confidence: ${confidencePct}%\nReal: ${complement}%`, 'warning');
       } else if (result.no_face) {
         showNotification('Analysis complete', 'No face detected in the image', 'info');
       } else {
-        showNotification('Genuine image', 'No indicators of AI generation detected', 'success');
+        showNotification('Likely real', `Confidence: ${confidencePct}%\nAI: ${complement}%`, 'success');
       }
       
       return result;
@@ -470,7 +510,7 @@
     titleEl.style.cssText = 'font-weight:600;letter-spacing:.2px;margin-bottom:2px;';
     const msgEl = document.createElement('div');
     msgEl.textContent = message;
-    msgEl.style.cssText = 'opacity:.9;line-height:1.35;';
+    msgEl.style.cssText = 'opacity:.9;line-height:1.35;white-space:pre-line;';
     content.appendChild(titleEl);
     content.appendChild(msgEl);
 
@@ -586,6 +626,23 @@
         const message = msg.message || '';
         const type = msg.type || 'info';
         showNotification(title, message, type);
+        return;
+      }
+      // Live settings update from options.js
+      if (msg && msg.type === 'settingsUpdated' && msg.settings) {
+        if (typeof msg.settings.realTimeScanning !== 'undefined') {
+          SETTINGS.realTimeScanning = !!msg.settings.realTimeScanning;
+          setPageScanning(SETTINGS.realTimeScanning);
+        }
+        if (typeof msg.settings.scanInterval !== 'undefined') {
+          SETTINGS.scanInterval = Math.max(1, parseInt(msg.settings.scanInterval));
+          if (pageScanEnabled && pageScanIntervalId) {
+            clearInterval(pageScanIntervalId);
+            pageScanIntervalId = setInterval(() => {
+              try { scanForImages(); } catch (_) {}
+            }, Math.max(1000, (SETTINGS.scanInterval || 3) * 1000));
+          }
+        }
       }
     });
   } catch (e) {

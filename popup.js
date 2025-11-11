@@ -1,52 +1,56 @@
 document.addEventListener("DOMContentLoaded", () => {
-  const resultsDiv = document.getElementById("results");
+  const loading = document.getElementById('loading');
+  const content = document.getElementById('content');
+  const toggle = document.getElementById('clickToDetectToggle');
+  const stateLabel = document.getElementById('clickToDetectState');
+  const statusIndicator = document.getElementById('statusIndicator');
+  const statusTitle = document.getElementById('statusTitle');
+  const statusDetails = document.getElementById('statusDetails');
 
-  function mapPercent(p) {
-    const v = Math.round(Number(p) || 0);
-    if (v >= 1 && v <= 20) return 79 + v; // 1..20 -> 80..99
-    return v;
+  function setState(on) {
+    if (toggle) toggle.checked = !!on;
+    if (stateLabel) stateLabel.textContent = on ? 'On' : 'Off';
   }
 
-  // Get saved data from background.js
-  chrome.storage.local.get(["lastDetection"], (data) => {
-    if (!data.lastDetection) {
-      resultsDiv.innerHTML = "<p>No recent detection found.</p>";
-      return;
-    }
-
-    const detection = data.lastDetection;
-    const { model_results, final_decision } = detection;
-
-    let html = "<h2>🧠 Model Predictions</h2>";
-
-    model_results.forEach(r => {
-      const emoji = r.label === "REAL" ? "✅" : (r.label === "FAKE" ? "❌" : "⚠️");
-      const originalPct = (Number(r.confidence) || 0) * 100;
-      const mappedPct = mapPercent(originalPct);
-      html += `
-        <div class="result-item">
-          <span class="result-label">${emoji} ${r.model}</span>
-          <span>${r.label}</span>
-          <span class="result-confidence">(${mappedPct.toFixed(0)}%)</span>
-        </div>
-      `;
+  try {
+    chrome.storage.sync.get({ clickToDetect: false }, (items) => {
+      setState(!!items.clickToDetect);
     });
+  } catch (e) { /* no-op */ }
 
-    // Ensemble summary
-    const label = final_decision.final_label;
-    let cls = "uncertain";
-    if (label.includes("Real")) cls = "real";
-    else if (label.includes("Deepfake")) cls = "fake";
+  if (toggle) {
+    toggle.addEventListener('change', () => {
+      const val = !!toggle.checked;
+      setState(val);
+      try {
+        chrome.storage.sync.set({ clickToDetect: val }, () => {
+          chrome.runtime.sendMessage({ type: 'settingsUpdated', settings: { clickToDetect: val } });
+        });
+      } catch (e) { /* no-op */ }
+    });
+  }
 
-    const mappedReal = mapPercent(Number(final_decision.real_confidence) || 0);
-    const mappedFake = mapPercent(Number(final_decision.fake_confidence) || 0);
-    html += `
-      <div class="final-decision ${cls}">
-        <p>${label}</p>
-        <p>Real: ${mappedReal.toFixed(0)}% | Fake: ${mappedFake.toFixed(0)}%</p>
-      </div>
-    `;
+  // Show content, hide loader
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'block';
 
-    resultsDiv.innerHTML = html;
-  });
+  // Health check
+  async function refreshHealth() {
+    try {
+      const res = await new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage({ action: 'checkServerStatus' }, (resp) => resolve(resp));
+        } catch (_) { resolve(null); }
+      });
+      const online = !!(res && res.isRunning);
+      if (statusIndicator) {
+        statusIndicator.classList.toggle('online', online);
+        statusIndicator.classList.toggle('offline', !online);
+      }
+      if (statusTitle) statusTitle.textContent = online ? 'Server online' : 'Checking server status...';
+      if (statusDetails) statusDetails.textContent = online ? 'Connected to detection server' : 'Connecting to detection server';
+    } catch (_) {}
+  }
+  refreshHealth();
+  setInterval(refreshHealth, 15000);
 });

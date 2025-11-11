@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS = {
   realTimeScanning: true,
   scanInterval: 3, // seconds
   showNotifications: true,
+  clickToDetect: false,
   serverUrl: 'http://127.0.0.1:8000',
   
   // Models
@@ -36,6 +37,7 @@ const elements = {
   scanInterval: document.getElementById('scanInterval'),
   scanIntervalValue: document.getElementById('scanIntervalValue'),
   showNotifications: document.getElementById('showNotifications'),
+  clickToDetect: document.getElementById('clickToDetect'),
   serverUrl: document.getElementById('serverUrl'),
   testConnection: document.getElementById('testConnection'),
   serverStatus: document.getElementById('serverStatus'),
@@ -166,6 +168,7 @@ function saveOptions(e) {
     realTimeScanning: elements.realTimeScanning.checked,
     scanInterval: parseInt(elements.scanInterval.value),
     showNotifications: elements.showNotifications.checked,
+    clickToDetect: !!elements.clickToDetect?.checked,
     serverUrl: elements.serverUrl.value,
     
     // Models
@@ -201,6 +204,7 @@ function restoreOptions() {
     elements.scanInterval.value = settings.scanInterval;
     elements.scanIntervalValue.textContent = settings.scanInterval;
     elements.showNotifications.checked = settings.showNotifications;
+    if (elements.clickToDetect) elements.clickToDetect.checked = !!settings.clickToDetect;
     elements.serverUrl.value = settings.serverUrl;
     
     // Models Tab
@@ -256,6 +260,26 @@ document.addEventListener('DOMContentLoaded', () => {
   elements.testConnection.addEventListener('click', testServerConnection);
   elements.form.addEventListener('submit', saveOptions);
   elements.resetBtn.addEventListener('click', resetToDefaults);
+  
+  // Auto-save on change for real-time behavior
+  const autoSaveControls = [
+    'realTimeScanning', 'scanInterval', 'showNotifications', 'clickToDetect',
+    'serverUrl', 'useViT', 'useEfficientNet', 'detectionThreshold', 'modelPriority',
+    'showBadges', 'highlightFaces', 'badgePosition', 'badgeStyle'
+  ];
+  autoSaveControls.forEach((key) => {
+    const el = elements[key];
+    if (!el) return;
+    const handler = () => saveOptions();
+    el.addEventListener('change', handler);
+    if (el.tagName === 'INPUT' && (el.type === 'range' || el.type === 'text')) {
+      el.addEventListener('input', () => {
+        // Throttle frequent inputs lightly
+        clearTimeout(el.__debounce);
+        el.__debounce = setTimeout(handler, 250);
+      });
+    }
+  });
   
   // Support link
   document.getElementById('supportLink')?.addEventListener('click', (e) => {

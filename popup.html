@@ -6,18 +6,17 @@
   <title>AI Image Guard</title>
   <style>
     :root {
-      --primary-color: #4a6fa5;
-      --primary-hover: #3a5a8c;
-      --secondary-color: #6c757d;
-      --success-color: #28a745;
-      --danger-color: #dc3545;
-      --warning-color: #ffc107;
-      --light-bg: #f8f9fa;
-      --border-color: #dee2e6;
-      --text-color: #333;
-      --text-light: #6c757d;
+      --primary-color: #53629E;   /* palette */
+      --primary-hover: #473472;   /* palette */
+      --accent-color:  #87BAC3;   /* palette */
+      --light-bg:      #D6F4ED;   /* palette */
+      --border-color:  #C5E9E0;   /* derived from light */
+      --text-color:    #1f2430;
+      --text-light:    #5b6476;
+      --danger-color:  #ef4444;   /* offline/error */
     }
     
+    html { background-color: white; }
     * {
       box-sizing: border-box;
       margin: 0;
@@ -29,17 +28,28 @@
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       line-height: 1.5;
       color: var(--text-color);
-      background-color: white;
-      padding: 0;
+      background-color: white; /* fill popup background */
+      padding: 0; /* remove gap so panel fills window */
       margin: 0;
     }
     
+    .panel {
+      background: #ffffff;
+      border-radius: 0; /* fill to edges */
+      border: none;
+      overflow: hidden;
+      box-shadow: none; /* avoid corner shadows showing square edge */
+    }
+    
     .header {
-      background-color: var(--primary-color);
+      background: linear-gradient(90deg, var(--primary-hover), var(--primary-color));
       color: white;
-      padding: 15px;
+      padding: 14px 12px;
       text-align: center;
       position: relative;
+      border-top-left-radius: 0; /* fill to edges */
+      border-top-right-radius: 0;
+      box-shadow: none;
     }
     
     .header h1 {
@@ -60,19 +70,15 @@
     
     .status-card {
       background-color: var(--light-bg);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 12px 15px;
-      margin-bottom: 15px;
-      border-left: 4px solid var(--secondary-color);
+      margin-bottom: 14px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 6px 20px rgba(71,52,114,0.06);
     }
     
-    .status-card.online {
-      border-left-color: var(--success-color);
-    }
-    
-    .status-card.offline {
-      border-left-color: var(--danger-color);
-    }
+    .status-card.online { border-left: 4px solid var(--accent-color); }
+    .status-card.offline { border-left: 4px solid var(--danger-color); }
     
     .status-header {
       display: flex;
@@ -88,8 +94,8 @@
     }
     
     .status-indicator.online {
-      background-color: var(--success-color);
-      box-shadow: 0 0 8px var(--success-color);
+      background-color: var(--accent-color);
+      box-shadow: 0 0 8px var(--accent-color);
     }
     
     .status-indicator.offline {
@@ -120,10 +126,7 @@
       transition: all 0.2s ease;
     }
     
-    .btn-primary {
-      background-color: var(--primary-color);
-      color: white;
-    }
+    .btn-primary { background-color: var(--primary-color); color: white; box-shadow: 0 6px 18px rgba(71,52,114,0.22); }
     
     .btn-primary:hover {
       background-color: var(--primary-hover);
@@ -199,6 +202,39 @@
       display: none !important;
     }
     
+    /* Toggle switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #e8ecf6;
+      transition: .2s ease;
+      border-radius: 9999px;
+      box-shadow: inset 0 0 0 1px var(--border-color);
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 20px; width: 20px;
+      left: 2px; top: 2px;
+      background-color: white;
+      transition: .2s ease;
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    input:checked + .slider {
+      background-color: var(--primary-color);
+      box-shadow: none;
+    }
+    input:checked + .slider:before { transform: translateX(20px); }
+    
     #loading {
       text-align: center;
       padding: 20px 0;
@@ -220,17 +256,33 @@
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>AI Image Guard</h1>
-    <div class="version">v2.0</div>
-  </div>
-  
-  <div id="loading">
+  <div class="panel">
+    <div class="header">
+      <h1>AI Image Guard</h1>
+      <div class="version">v1.0</div>
+    </div>
+
+    <div id="loading">
     <div class="spinner"></div>
     <div>Loading...</div>
-  </div>
+    </div>
   
-  <div id="content" class="content" style="display: none;">
+    <div id="content" class="content" style="display: none;">
+    <div class="status-card" style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <div>
+          <div style="font-weight:600;">Click to detect</div>
+          <div class="status-details">Automatically analyze an image when you click it</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label class="switch" aria-label="Click to detect toggle">
+            <input type="checkbox" id="clickToDetectToggle" />
+            <span class="slider"></span>
+          </label>
+          <span class="status-details" id="clickToDetectState">Off</span>
+        </div>
+      </div>
+    </div>
     <div id="statusCard" class="status-card">
       <div class="status-header">
         <div id="statusIndicator" class="status-indicator"></div>
@@ -239,33 +291,8 @@
       <div id="statusDetails" class="status-details">Connecting to detection server</div>
     </div>
     
-    <div class="quick-stats">
-      <div class="stat-item">
-        <div id="scannedCount" class="stat-value">0</div>
-        <div class="stat-label">Scanned</div>
-      </div>
-      <div class="stat-item">
-        <div id="detectedCount" class="stat-value">0</div>
-        <div class="stat-label">Detected</div>
-      </div>
-      <div class="stat-item">
-        <div id="accuracyRate" class="stat-value">-</div>
-        <div class="stat-label">Accuracy</div>
-      </div>
-    </div>
-    
-    <button id="scanPageBtn" class="btn btn-primary">
-      <span class="btn-icon">🔍</span> Scan Current Page
-    </button>
-    
-    <button id="checkImageBtn" class="btn btn-outline">
-      <span class="btn-icon">🖼️</span> Check Image from Clipboard
-    </button>
-    
-    <div style="margin: 15px 0; text-align: center;">
-      <a href="#" id="viewHistory" style="font-size: 0.8rem; color: var(--primary-color); text-decoration: none;">View Scan History</a>
-    </div>
-    
+    <!-- Actions removed per request -->
+
     <div style="display: flex; justify-content: space-between; margin-top: 15px;">
       <button id="settingsBtn" class="btn btn-outline" style="width: 48%;">
         <span class="btn-icon">⚙️</span> Settings
@@ -274,38 +301,13 @@
         <span class="btn-icon">❓</span> Help
       </button>
     </div>
+    </div>
+    
+    <div class="footer">
+      AI Image Guard &copy; 2025 | <a href="#" id="privacyLink">Privacy Policy</a>
+    </div>
   </div>
   
-  <div class="footer">
-    AI Image Guard &copy; 2023 | <a href="#" id="privacyLink">Privacy Policy</a>
-  </div>
-  
-  <script>
-    function mapPercent(p) {
-      const v = Math.round(Number(p) || 0);
-      if (v >= 1 && v <= 20) return 79 + v;
-      return v;
-    }
-    chrome.storage.local.get("lastDetection", (data) => {
-      const el = document.getElementById("result");
-      if (!data.lastDetection) return;
-
-      const { final_decision, model_results, timestamp } = data.lastDetection;
-      const { final_label, real_confidence, fake_confidence } = final_decision;
-
-      const time = new Date(timestamp).toLocaleTimeString();
-      const cls = final_label.includes("Real") ? "real" :
-                  final_label.includes("Uncertain") ? "uncertain" : "fake";
-
-      let html = `<div class="label ${cls}">${final_label}</div>`;
-      const mappedReal = mapPercent(real_confidence);
-      const mappedFake = mapPercent(fake_confidence);
-      html += `<div>Real: ${mappedReal}% | Fake: ${mappedFake}%</div>`;
-      html += `<div style="margin-top:8px;font-size:11px;color:#666;">${time}</div>`;
-
-      el.innerHTML = html;
-      el.className = `result`;
-    });
-  </script>
+  <script src="popup.js"></script>
 </body>
 </html>

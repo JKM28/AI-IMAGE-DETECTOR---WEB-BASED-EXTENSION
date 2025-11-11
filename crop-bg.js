@@ -16,8 +16,7 @@ function getServerUrl() {
 // Map API percentage to display percentage per requirement
 function mapDisplayPercent(rawPct) {
   const v = Math.round(Number(rawPct) || 0);
-  if (v >= 1 && v <= 20) return 79 + v; // 1..20 -> 80..99
-  return v; // 0 or >=20 unchanged
+  return Math.max(0, Math.min(100, 100 - v));
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
@@ -90,33 +89,52 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       try {
         const serverUrl = await getServerUrl();
 
-        const response = await Promise.race([
-          fetch(`${serverUrl}/classify/url`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: info.srcUrl, use_vit: true, use_efficientnet: true })
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out.")), 8000))
-        ]);
+        // Try to fetch image bytes first for consistent content
+        let data;
+        try {
+          const imgResp = await Promise.race([
+            fetch(info.srcUrl, { mode: 'cors' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Image fetch timed out.")), 8000))
+          ]);
+          if (!imgResp.ok) throw new Error(`Image fetch ${imgResp.status}`);
+          const blob = await imgResp.blob();
+          if (!blob || (blob.size !== undefined && blob.size === 0)) throw new Error('Empty image blob');
 
-        if (!response.ok) throw new Error("Deepfake detection request failed.");
+          const formData = new FormData();
+          formData.append('file', new File([blob], 'context-image.jpg', { type: blob.type || 'image/jpeg' }));
 
-        const data = await response.json();
+          const resp = await Promise.race([
+            fetch(`${serverUrl}/classify/file`, { method: "POST", body: formData }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out.")), 8000))
+          ]);
+          if (!resp.ok) throw new Error("Deepfake detection request failed.");
+          data = await resp.json();
+        } catch (e) {
+          // Fallback to server URL path
+          const response = await Promise.race([
+            fetch(`${serverUrl}/classify/url`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ url: info.srcUrl, use_vit: true, use_efficientnet: true })
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out.")), 8000))
+          ]);
+          if (!response.ok) throw new Error("Deepfake detection request failed.");
+          data = await response.json();
+        }
 
         if (data && data.status === 'success' && typeof data.is_fake === 'boolean') {
-          const confPctRaw = Math.round((data.confidence || 0) * 100);
-          const confPct = mapDisplayPercent(confPctRaw);
+          const confPct = Math.round((data.confidence || 0) * 100);
+          const complement = Math.max(0, 100 - confPct);
           const title = 'Analysis Complete';
           const msg = data.is_fake
-            ? `Likely AI-generated\nConfidence: ${confPct}%`
-            : `Likely real\nConfidence: ${confPct}%`;
+            ? `Likely AI-generated\nConfidence: ${confPct}%\nReal: ${complement}%`
+            : `Likely real\nConfidence: ${confPct}%\nAI: ${complement}%`;
           sendToast(tab && tab.id, title, msg, data.is_fake ? 'warning' : 'success');
         } else if (data && data.final_decision) {
           const { final_label, real_confidence, fake_confidence } = data.final_decision;
           const title = 'Analysis Complete';
-          const realPct = mapDisplayPercent(Number(real_confidence) || 0);
-          const fakePct = mapDisplayPercent(Number(fake_confidence) || 0);
-          const msg = `${final_label}\nReal: ${realPct}% | Fake: ${fakePct}%`;
+          const msg = `${final_label}\nReal: ${real_confidence}% | Fake: ${fake_confidence}%`;
           sendToast(tab && tab.id, title, msg, 'info');
         } else if (data && data.error) {
           sendToast(tab && tab.id, "Analysis Error", String(data.error), 'error');
@@ -196,9 +214,11 @@ chrome.runtime.onMessage.addListener(async (message, sender) => {
     // Handle server response
     if (data && data.status === 'success' && typeof data.is_fake === 'boolean') {
       const confPct = Math.round((data.confidence || 0) * 100);
+      const complement = Math.max(0, 100 - confPct);
       const emoji = data.is_fake ? '❌' : '✅';
       const label = data.is_fake ? 'Likely AI-generated' : 'Likely real';
-      const msg = `${emoji} ${label}\nConfidence: ${confPct}%`;
+      const extra = data.is_fake ? `Real: ${complement}%` : `AI: ${complement}%`;
+      const msg = `${emoji} ${label}\nConfidence: ${confPct}%\n${extra}`;
       sendToast(tabId, "Detection Result", msg, data.is_fake ? 'warning' : 'success');
     } else if (data && data.final_decision) {
       // Backward compatibility in case another server format is used

@@ -17,11 +17,43 @@ chrome.storage.sync.get({ serverUrl: SERVER_URL }, (items) => {
   }
 });
 
+// Also react to storage changes and broadcast latest settings
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    const settings = {};
+    Object.keys(changes || {}).forEach((k) => { settings[k] = changes[k]?.newValue; });
+    if (Object.keys(settings).length === 0) return;
+    // Keep local SERVER_URL in sync if present
+    if (typeof settings.serverUrl === 'string') {
+      SERVER_URL = settings.serverUrl;
+      console.log('Server URL updated from storage change:', SERVER_URL);
+    }
+    try {
+      chrome.tabs.query({}, (tabs) => {
+        tabs.forEach((t) => {
+          try { chrome.tabs.sendMessage(t.id, { type: 'settingsUpdated', settings }); } catch (_) {}
+        });
+      });
+    } catch (_) {}
+  });
+} catch (_) {}
+
 // Listen to options updates
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg && msg.type === 'settingsUpdated' && msg.settings?.serverUrl) {
     SERVER_URL = msg.settings.serverUrl;
     console.log('Server URL updated from options:', SERVER_URL);
+  }
+  // Broadcast settings updates to all tabs so content scripts react without reload
+  if (msg && msg.type === 'settingsUpdated' && msg.settings) {
+    try {
+      chrome.tabs.query({}, (tabs) => {
+        tabs.forEach((t) => {
+          try { chrome.tabs.sendMessage(t.id, { type: 'settingsUpdated', settings: msg.settings }); } catch (_) {}
+        });
+      });
+    } catch (_) {}
   }
 });
 
@@ -89,17 +121,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'classifyUrl' && request.url) {
     (async () => {
       try {
+        // Preferred: fetch bytes client-side and upload as file for consistent content
+        let blob;
+        try {
+          const imgResp = await fetch(request.url, { mode: 'cors' });
+          if (!imgResp.ok) throw new Error(`Image fetch ${imgResp.status}`);
+          blob = await imgResp.blob();
+        } catch (e) {
+          blob = null;
+        }
+
+        if (blob && (blob.size === undefined || blob.size > 0)) {
+          const formData = new FormData();
+          formData.append('file', new File([blob], 'url-image.jpg', { type: blob.type || 'image/jpeg' }));
+          const resp = await fetch(`${SERVER_URL}/classify/file`, {
+            method: 'POST',
+            body: formData
+          });
+          if (!resp.ok) {
+            const text = await resp.text().catch(() => '');
+            throw new Error(`Server ${resp.status} ${resp.statusText} ${text}`);
+          }
+          const result = await resp.json();
+          sendResponse({ success: true, result });
+          return;
+        }
+
+        // Fallback: use server URL path
         const resp = await fetch(`${SERVER_URL}/classify/url`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: request.url, use_vit: true, use_efficientnet: true })
         });
-
         if (!resp.ok) {
           const text = await resp.text().catch(() => '');
           throw new Error(`Server ${resp.status} ${resp.statusText} ${text}`);
         }
-
         const result = await resp.json();
         sendResponse({ success: true, result });
       } catch (e) {

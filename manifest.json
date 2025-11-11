@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Image Deepfake Guard",
-  "version": "2.0.1",
+  "version": "1.0",
   "description": "Detect deepfake or AI-generated images with real-time scanning and right-click detection.",
   "permissions": [
     "contextMenus",
@@ -16,7 +16,8 @@
   "host_permissions": [
     "http://127.0.0.1:8000/*",
     "https://*.facebook.com/*",
-    "https://*.fbcdn.net/*"
+    "https://*.fbcdn.net/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js",
@@ -61,6 +62,6 @@
     "open_in_tab": true
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 https://*.facebook.com;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 https://*.facebook.com https://* http://*;"
   }
 }
