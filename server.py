@@ -199,7 +199,7 @@ async def classify_url(data: ImageURL, use_sightengine: bool = True, models: str
 
 @app.get("/")
 def root():
-    return {"message": "✅ Deepfake Detection API (Sightengine) Running!"}
+    return {"message": "Deepfake Detection API (Sightengine) Running!"}
 
 
 @app.get("/health")

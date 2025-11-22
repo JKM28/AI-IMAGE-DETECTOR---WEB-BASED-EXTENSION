@@ -95,6 +95,7 @@
   let currentToastData = null;
   const CLIENT_ID = Math.random().toString(36).slice(2);
   let isApplyingStorageToast = false;
+  let uploadState = { hasFlagged: false, confidencePct: 0, confirmed: false };
 
   // Initialize the scanner when the page is fully loaded
   async function initScanner() {
@@ -122,6 +123,7 @@
     
     // Listen for file uploads
     setupUploadListeners();
+    setupActionInterceptors();
     
     console.log('[Facebook Scanner] Initialized');
   }
@@ -281,6 +283,40 @@
     });
   }
 
+  function setupActionInterceptors() {
+    try {
+      document.addEventListener('click', (e) => {
+        try {
+          const dialog = e.target && typeof e.target.closest === 'function'
+            ? e.target.closest(CONFIG.SELECTORS.PREVIEW_CONTAINER || 'div[role="dialog"]')
+            : null;
+          if (!dialog) return;
+
+          let btn = null;
+          if (e.target && typeof e.target.closest === 'function') {
+            btn = e.target.closest('div[role="button"], button, span[role="button"]');
+          }
+          if (!btn) return;
+
+          const label = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+          const isPostLike = label === 'post' || label === 'share' || label === 'next' || label === 'done' || label === 'save';
+          if (!isPostLike && !btn.matches(CONFIG.SELECTORS.POST_BUTTON) && !btn.matches(CONFIG.SELECTORS.STORY_BUTTON)) return;
+          if (uploadState.hasFlagged && !uploadState.confirmed) {
+            const pct = Math.max(0, Math.min(100, Math.round(Number(uploadState.confidencePct) || 0)));
+            const proceed = window.confirm(`This image appears to be AI-generated.\nConfidence: ${pct}%.\nDo you still want to continue with the upload?`);
+            if (!proceed) {
+              e.preventDefault();
+              e.stopPropagation();
+              try { e.stopImmediatePropagation && e.stopImmediatePropagation(); } catch (_) {}
+              return;
+            }
+            uploadState.confirmed = true;
+          }
+        } catch (_) {}
+      }, true);
+    } catch (_) {}
+  }
+
   // Handle file upload
   async function handleFileUpload(event) {
     if (isProcessingUpload) return;
@@ -288,6 +324,8 @@
     const files = event.target.files;
     if (!files || files.length === 0) return;
     
+    uploadState = { hasFlagged: false, confidencePct: 0, confirmed: false };
+
     isProcessingUpload = true;
     
     // Show processing notification (single area)
@@ -301,6 +339,14 @@
       try {
         const img = await createImageFromFile(file);
         const result = await analyzeImage(img, 'upload');
+        if (result && result.is_fake) {
+          try {
+            const pct = Math.round((Number(result.confidence) || 0) * 100);
+            uploadState.hasFlagged = true;
+            uploadState.confidencePct = Math.max(uploadState.confidencePct || 0, pct);
+            uploadState.confirmed = false;
+          } catch (_) {}
+        }
         
         // Result badge intentionally disabled in this script
       } catch (error) {
