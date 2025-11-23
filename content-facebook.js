@@ -75,6 +75,278 @@
       default: '#757575'
     }
   };
+// ---------- Custom upload confirmation modal (drop-in)
+// Paste this once near the top of content-facebook.js (after CONFIG)
+function ensureUploadConfirmationModal() {
+  if (document.getElementById('ai-upload-confirm-modal')) return;
+
+  // Styles
+  const style = document.createElement('style');
+  style.id = 'ai-upload-confirm-styles';
+  style.textContent = `
+  /* Modal container */
+  #ai-upload-confirm-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2147483650;
+    font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  /* Dimmed backdrop */
+  #ai-upload-confirm-modal .backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    backdrop-filter: blur(2px);
+  }
+
+  /* Dialog panel (FB style) */
+  #ai-upload-confirm-modal .panel {
+    position: relative;
+    width: 420px;
+    max-width: calc(100% - 32px);
+    background: #ffffff;
+    color: #1c1e21;
+    border-radius: 12px;
+    padding: 20px 22px 16px;
+    box-shadow: 0 12px 28px 0 rgba(0,0,0,0.2), 
+                0 2px 4px 0 rgba(0,0,0,0.1);
+    animation: fbModalIn 0.18s ease-out;
+  }
+
+  /* Header */
+  #ai-upload-confirm-modal h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  /* Confidence and description */
+  #ai-upload-confirm-modal .meta {
+    font-size: 13px;
+    color: #65676b;
+    margin-bottom: 10px;
+  }
+
+  #ai-upload-confirm-modal p {
+    margin: 0 0 14px;
+    font-size: 14px;
+    color: #1c1e21;
+    white-space: pre-line;
+  }
+
+  /* Checkbox */
+  #ai-upload-confirm-modal .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 18px;
+    font-size: 13px;
+    color: #4a4a4a;
+  }
+
+  /* Buttons container */
+  #ai-upload-confirm-modal .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  /* Cancel button — FB style */
+  #ai-upload-confirm-modal .btn-cancel {
+    background: #f0f2f5;
+    border: 1px solid #d0d4d9;
+    color: #050505;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  #ai-upload-confirm-modal .btn-cancel:hover {
+    background: #e4e6eb;
+  }
+
+  /* Proceed button — FB danger style */
+  #ai-upload-confirm-modal .btn-confirm {
+    background: #e41e3f;
+    border: none;
+    color: #ffffff;
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #ai-upload-confirm-modal .btn-confirm:hover {
+    background: #c91131;
+  }
+
+  /* Animation (FB-like) */
+  @keyframes fbModalIn {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* DARK MODE (matches Facebook dark theme) */
+  @media (prefers-color-scheme: dark) {
+    #ai-upload-confirm-modal .panel {
+      background: #242526;
+      color: #e4e6eb;
+    }
+    #ai-upload-confirm-modal p {
+      color: #e4e6eb;
+    }
+    #ai-upload-confirm-modal .meta {
+      color: #b0b3b8;
+    }
+    #ai-upload-confirm-modal .btn-cancel {
+      background: #3a3b3c;
+      border-color: #4e4f50;
+      color: #e4e6eb;
+    }
+    #ai-upload-confirm-modal .btn-cancel:hover {
+      background: #4e4f50;
+    }
+    #ai-upload-confirm-modal .btn-confirm {
+      background: #e41e3f;
+    }
+    #ai-upload-confirm-modal .btn-confirm:hover {
+      background: #c91131;
+    }
+  }
+    /* Shake animation */
+@keyframes modalShake {
+  0%   { transform: translateX(0); }
+  20%  { transform: translateX(-6px); }
+  40%  { transform: translateX(6px); }
+  60%  { transform: translateX(-4px); }
+  80%  { transform: translateX(4px); }
+  100% { transform: translateX(0); }
+}
+
+#ai-upload-confirm-modal .panel.shake {
+  animation: modalShake 0.35s ease;
+}
+
+`;
+
+  document.head.appendChild(style);
+
+  // DOM
+  const node = document.createElement('div');
+  node.id = 'ai-upload-confirm-modal';
+  node.innerHTML = `
+    <div class="backdrop" role="presentation" tabindex="-1"></div>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="ai-upload-title" aria-describedby="ai-upload-desc">
+      <h3 id="ai-upload-title">Confirm upload</h3>
+      <div class="meta" id="ai-upload-meta"></div>
+      <p id="ai-upload-desc">This image appears to be AI-generated.</p>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="ai-upload-dont-show" type="checkbox" style="margin-right:8px;"/> <label for="ai-upload-dont-show" style="font-size:12px;color:inherit;opacity:0.8;">Don't show again for this session</label>
+      </div>
+      <div class="actions">
+        <button class="btn-cancel" id="ai-upload-cancel">Cancel</button>
+        <button class="btn-confirm danger" id="ai-upload-confirm">Proceed</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(node);
+
+  // Event wiring
+  const backdrop = node.querySelector('.backdrop');
+  const btnCancel = node.querySelector('#ai-upload-cancel');
+  const btnConfirm = node.querySelector('#ai-upload-confirm');
+  const dontShow = node.querySelector('#ai-upload-dont-show');
+const panel = node.querySelector('.panel');
+
+// When clicking outside the modal, shake instead of closing
+backdrop.addEventListener('click', () => {
+  panel.classList.add('shake');
+
+  setTimeout(() => {
+    panel.classList.remove('shake');
+  }, 350);
+});
+
+  // Close helpers
+  function hide() { node.style.display = 'none'; node.setAttribute('aria-hidden', 'true'); }
+  function show() { node.style.display = 'flex'; node.removeAttribute('aria-hidden'); // focus management
+    const confirmButton = node.querySelector('#ai-upload-confirm');
+    if (confirmButton) confirmButton.focus();
+  }
+
+  btnCancel.addEventListener('click', hide);
+
+  // Note: confirm handler will be wired per-call via returned promise listeners
+}
+// showUploadConfirmation returns a Promise<boolean>
+function showUploadConfirmation({ pct = 0, title = 'This image may be AI-generated', message = '' } = {}) {
+  ensureUploadConfirmationModal();
+  return new Promise((resolve) => {
+    const node = document.getElementById('ai-upload-confirm-modal');
+    if (!node) { resolve(false); return; }
+    const meta = node.querySelector('#ai-upload-meta');
+    const desc = node.querySelector('#ai-upload-desc');
+    const h = node.querySelector('#ai-upload-title');
+    const btnConfirm = node.querySelector('#ai-upload-confirm');
+    const btnCancel = node.querySelector('#ai-upload-cancel');
+    const dontShow = node.querySelector('#ai-upload-dont-show');
+
+
+
+    h.textContent = title || 'Confirm upload';
+    desc.textContent = message || `This image appears to be AI-generated. Confidence: ${Math.round(pct)}%. Are you sure you want to proceed?`;
+
+    // reset checkbox
+    if (dontShow) dontShow.checked = false;
+
+    // temporary handlers
+    const cleanup = () => {
+      btnConfirm.removeEventListener('click', onConfirm);
+      btnCancel.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKey);
+      node.style.display = 'none';
+    };
+
+    function onConfirm(e) {
+      e && e.preventDefault && e.preventDefault();
+      const dont = !!(dontShow && dontShow.checked);
+      cleanup();
+      // store session flag if checked
+      if (dont) try { sessionStorage.setItem('ai_upload_confirm_hide', '1'); } catch(_) {}
+      resolve(true);
+    }
+    function onCancel(e) {
+      e && e.preventDefault && e.preventDefault();
+      cleanup();
+      resolve(false);
+    }
+    function onKey(e) {
+  // ❌ Disable escape close — user must choose explicitly
+  // if (e.key === 'Escape') onCancel();
+
+  // ✔ Enter can still confirm
+  if (e.key === 'Enter') onConfirm();
+}
+
+    btnConfirm.addEventListener('click', onConfirm);
+    btnCancel.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKey);
+
+    // show
+    node.style.display = 'flex';
+  });
+}
 
   // Disable in-page badges to avoid duplicates; keep toasts enabled for results
   const SHOW_BADGES = false;
@@ -285,7 +557,7 @@
 
   function setupActionInterceptors() {
     try {
-      document.addEventListener('click', (e) => {
+      document.addEventListener('click', async (e) => {
         try {
           const dialog = e.target && typeof e.target.closest === 'function'
             ? e.target.closest(CONFIG.SELECTORS.PREVIEW_CONTAINER || 'div[role="dialog"]')
@@ -301,17 +573,41 @@
           const label = (btn.innerText || btn.textContent || '').trim().toLowerCase();
           const isPostLike = label === 'post' || label === 'share' || label === 'next' || label === 'done' || label === 'save';
           if (!isPostLike && !btn.matches(CONFIG.SELECTORS.POST_BUTTON) && !btn.matches(CONFIG.SELECTORS.STORY_BUTTON)) return;
-          if (uploadState.hasFlagged && !uploadState.confirmed) {
-            const pct = Math.max(0, Math.min(100, Math.round(Number(uploadState.confidencePct) || 0)));
-            const proceed = window.confirm(`This image appears to be AI-generated.\nConfidence: ${pct}%.\nDo you still want to continue with the upload?`);
-            if (!proceed) {
-              e.preventDefault();
-              e.stopPropagation();
-              try { e.stopImmediatePropagation && e.stopImmediatePropagation(); } catch (_) {}
-              return;
-            }
-            uploadState.confirmed = true;
-          }
+          // --- REPLACEMENT START ---
+              if (uploadState.hasFlagged && !uploadState.confirmed) {
+                // Quick session bypass (if user previously checked "Don't show again" this session)
+                try {
+                  if (sessionStorage.getItem('ai_upload_confirm_hide') === '1') {
+                    uploadState.confirmed = true;
+                  }
+                } catch (_) {}
+
+                if (!uploadState.confirmed) {
+                  const pct = Math.max(0, Math.min(100, Math.round(Number(uploadState.confidencePct) || 0)));
+                  try {
+                    const ok = await showUploadConfirmation({
+                      pct,
+                      title: 'This image appears to be AI-generated',
+                      message: `Confidence: ${pct}%.\nDo you still want to continue with the upload?`
+                    });
+                    if (!ok) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      try { e.stopImmediatePropagation && e.stopImmediatePropagation(); } catch (_) {}
+                      return;
+                    }
+                    uploadState.confirmed = true;
+                  } catch (err) {
+                    // If modal fails for any reason, fall back to blocking the submit to be safe
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try { e.stopImmediatePropagation && e.stopImmediatePropagation(); } catch (_) {}
+                    return;
+                  }
+                }
+              }
+              // --- REPLACEMENT END ---
+
         } catch (_) {}
       }, true);
     } catch (_) {}
