@@ -31,7 +31,7 @@ JSONL_LOG_PATH = os.path.join(_BASE_DIR, "logging_log.jsonl")
 # (removed local face detection helpers)
 
 
-print("ℹ️ Using Sightengine API only; local models disabled.\n")
+print("Using Sightengine API only; local models disabled.\n")
 
 
 # ------------------------------------------------------

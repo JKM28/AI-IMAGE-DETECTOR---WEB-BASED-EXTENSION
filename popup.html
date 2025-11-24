@@ -8,7 +8,7 @@
     :root {
       --primary-color: #53629E;   /* palette */
       --primary-hover: #473472;   /* palette */
-      --accent-color:  #87BAC3;   /* palette */
+      --accent-color:  #00cf53;   /* palette */
       --light-bg:      #D6F4ED;   /* palette */
       --border-color:  #C5E9E0;   /* derived from light */
       --text-color:    #1f2430;
@@ -249,7 +249,48 @@
       animation: spin 1s ease-in-out infinite;
       margin: 0 auto 10px;
     }
-    
+    /* Privacy Modal */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 999;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-content {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 300px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  text-align: left;
+}
+
+.modal-content h2 {
+  margin-bottom: 10px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.modal-content p {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  line-height: 1.45;
+}
+
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -292,22 +333,26 @@
     </div>
     
     <!-- Actions removed per request -->
-
-    <div style="display: flex; justify-content: space-between; margin-top: 15px;">
-      <button id="settingsBtn" class="btn btn-outline" style="width: 48%;">
-        <span class="btn-icon">⚙️</span> Settings
-      </button>
-      <button id="helpBtn" class="btn btn-outline" style="width: 48%;">
-        <span class="btn-icon">❓</span> Help
-      </button>
-    </div>
-    </div>
     
     <div class="footer">
       AI Image Guard &copy; 2025 | <a href="#" id="privacyLink">Privacy Policy</a>
     </div>
   </div>
   
+  <!-- Privacy Policy Modal -->
+<div id="privacyModal" class="modal hidden">
+  <div class="modal-content">
+    <h2>Privacy Policy</h2>
+    <p>
+      AI Image Guard does not collect, store, or transmit any personal data. 
+      Images are only processed when you perform a detection action, and all 
+      analysis is sent securely to your configured local or cloud server. 
+      No browsing activity, credentials, or private content is stored or shared.
+    </p>
+    <button id="closePrivacy" class="btn btn-primary" style="margin-top:12px;">Close</button>
+  </div>
+</div>
+
   <script src="popup.js"></script>
 </body>
 </html>

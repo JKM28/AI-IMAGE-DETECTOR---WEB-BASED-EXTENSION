@@ -613,10 +613,32 @@ function showUploadConfirmation({ pct = 0, title = 'This image may be AI-generat
     } catch (_) {}
   }
 
+  // Prevent multi-image uploads (system supports only 1 image)
+function blockMultipleUpload(files) {
+  if (!files || files.length <= 1) return false; // false = allowed
+
+  // Stop multi-image upload
+  clearToasts();
+  showNotification(
+    "AI Image Guard",
+    "Only one image can be analyzed at a time. Turn off Extention to upload Multiple image.",
+    "error"
+  );
+
+  return true; // true = block upload
+}
+
   // Handle file upload
   async function handleFileUpload(event) {
     if (isProcessingUpload) return;
     
+    // ⛔ Block multiple-image upload
+    if (blockMultipleUpload(event.target.files)) {
+      // Reset input value so user can upload again
+      if (event.target && event.target.value) event.target.value = '';
+      return; // Do not process anything
+    }
+
     const files = event.target.files;
     if (!files || files.length === 0) return;
     

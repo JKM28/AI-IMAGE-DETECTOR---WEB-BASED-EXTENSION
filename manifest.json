@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI Image Deepfake Guard",
+  "name": "AI Image Guard",
   "version": "1.0",
-  "description": "Detect deepfake or AI-generated images with real-time scanning and right-click detection.",
+  "description": "Detect AI-generated images with Upload Filterization, On-click and right-click detect menu, with real-time detection.",
   "permissions": [
     "contextMenus",
     "activeTab",

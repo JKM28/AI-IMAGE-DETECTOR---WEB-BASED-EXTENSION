@@ -51,6 +51,22 @@ document.addEventListener("DOMContentLoaded", () => {
       if (statusDetails) statusDetails.textContent = online ? 'Connected to detection server' : 'Connecting to detection server';
     } catch (_) {}
   }
+  document.getElementById("privacyLink").addEventListener("click", (e) => {
+  e.preventDefault();
+  document.getElementById("privacyModal").classList.remove("hidden");
+});
+
+document.getElementById("closePrivacy").addEventListener("click", () => {
+  document.getElementById("privacyModal").classList.add("hidden");
+});
+
+// Optional: close modal if background is clicked
+document.getElementById("privacyModal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) {
+    e.currentTarget.classList.add("hidden");
+  }
+});
+
   refreshHealth();
   setInterval(refreshHealth, 15000);
 });

@@ -1,7 +1,7 @@
 // background.js â€” Main background script that imports and initializes other background scripts
 
 // Import the background scripts
-import './crop-bg.js';
+import './right-click.js';
 
 console.log('Main background script loaded');
 
