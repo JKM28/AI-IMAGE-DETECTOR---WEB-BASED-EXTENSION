@@ -97,14 +97,17 @@
       // Skip too-small images / icons
       if (!img.src || img.naturalWidth < 80 || img.naturalHeight < 80) return; // skip tiny icons
       showToast('AI Image Guard', 'Analyzing image...', 'info');
-      // Prefer classify by URL to avoid tainted canvas issues
-      if (img.src.startsWith('http') || img.src.startsWith('https')) {
-        const targetUrl = getBestImageUrl(img) || img.src;
+      // Prefer classify by URL to avoid tainted canvas issues; derive best HTTP(S) URL if possible
+      let targetUrl = img.currentSrc || img.src || (typeof getBestImageUrl === 'function' ? getBestImageUrl(img) : null);
+      if (!targetUrl && typeof getBestImageUrl === 'function') {
+        targetUrl = getBestImageUrl(img);
+      }
+      if (targetUrl && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))) {
         try {
           const resp = await sendMessageSafely({ action: 'classifyUrl', url: targetUrl, user_action: 'On-click detect', detection_type: 'On-click detect' });
           renderResultToast(resp && resp.result ? resp.result : resp);
           return;
-        } catch (_) { /* fallback below */ }
+        } catch (_) { /* fallback below to canvas */ }
       }
       // Fallback: draw to canvas if same-origin data available
       try {
@@ -115,7 +118,30 @@
         ctx.drawImage(img, 0, 0);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
         const resp = await sendMessageSafely({ action: 'analyzeImage', imageData: dataUrl, source: 'click-to-detect', user_action: 'On-click detect', detection_type: 'On-click detect' });
-        renderResultToast(resp && resp.result ? resp.result : resp);
+        const p = resp && resp.result ? resp.result : resp;
+        if (!p) {
+          showToast('Analysis error', 'No response from server (screenshot fallback). For best accuracy, use Right-click  Detect Image when possible.', 'error');
+          return;
+        }
+        if (p.status === 'error' || resp.status === 'error') {
+          showToast('Analysis error', String(p.message || resp.message || 'Failed (screenshot fallback). For best accuracy, use Right-click  Detect Image when possible.'), 'error');
+          return;
+        }
+        const note = '\n\nNote: Using screenshot fallback. No URL available to fetch. For best accuracy, use Right‑click → Detect Image when possible.';
+        if (typeof p.is_fake === 'boolean' && typeof p.confidence !== 'undefined') {
+          const confPct = Math.round((p.confidence || 0) * 100);
+          const complement = Math.max(0, 100 - confPct);
+          const label = p.is_fake ? 'Likely AI-generated' : 'Likely real';
+          const extra = p.is_fake ? `Real: ${complement}%` : `AI: ${complement}%`;
+          showToast('Detection Result', `${label}\nConfidence: ${confPct}%\n${extra}${note}`, p.is_fake ? 'warning' : 'success');
+          return;
+        }
+        if (p.final_decision) {
+          const fd = p.final_decision;
+          showToast('Detection Result', `${fd.final_label}\nReal: ${fd.real_confidence}% | Fake: ${fd.fake_confidence}%${note}`, 'info');
+          return;
+        }
+        showToast('Analysis complete', `Unknown response format.${note}`, 'info');
       } catch (err) {
         // As a last resort, try classifyUrl even if non-http (may fail silently)
         try { 
@@ -170,15 +196,29 @@
       const variants = { info:['#0ea5e9','#0b1220','#e5f6ff'], success:['#22c55e','#0c1a14','#eafff1'], warning:['#f59e0b','#1a150b','#fff7e6'], error:['#ef4444','#1a0b0b','#ffecec'] };
       const v = variants[type] || variants.info;
       const toast = document.createElement('div');
-      toast.style.cssText = `display:flex;align-items:start;gap:12px;padding:12px 14px;max-width:360px;background:${v[1]};color:${v[2]};border-left:4px solid ${v[0]};border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,0.35);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;`;
+      toast.style.cssText = `display:flex;align-items:start;gap:12px;padding:12px 14px;max-width:360px;background:${v[1]};color:${v[2]};border-left:4px solid ${v[0]};border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,0.35);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;transition:opacity .18s ease-out,transform .18s ease-out;opacity:0;transform:translateY(-8px) scale(1);`;
       const content = document.createElement('div');
       const t = document.createElement('div'); t.textContent = title || 'AI Image Guard'; t.style.cssText = 'font-weight:600;letter-spacing:.2px;margin-bottom:2px;';
       const m = document.createElement('div'); m.textContent = message || ''; m.style.cssText = 'opacity:.9;line-height:1.35;white-space:pre-line;';
       content.appendChild(t); content.appendChild(m);
       const closeBtn = document.createElement('button'); closeBtn.textContent = '✕'; closeBtn.setAttribute('aria-label','Close notification'); closeBtn.style.cssText = 'margin-left:auto;background:transparent;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px;opacity:.7;';
-      closeBtn.onclick = () => { if (toast.parentNode) toast.parentNode.removeChild(toast); };
+      const removeToast = () => { if (toast.parentNode) toast.parentNode.removeChild(toast); };
+      closeBtn.onclick = removeToast;
+      toast.onclick = removeToast;
       toast.appendChild(content); toast.appendChild(closeBtn); container.appendChild(toast);
-      setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 5000);
+      requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0) scale(1)'; });
+      const timeoutMs = type === 'warning' ? 8000 : 5000;
+      let hideTimer = setTimeout(removeToast, timeoutMs);
+      if (type === 'warning' || type === 'success') {
+        toast.addEventListener('mouseenter', () => {
+          toast.style.transform = 'translateY(0) scale(1.05)';
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        });
+        toast.addEventListener('mouseleave', () => {
+          toast.style.transform = 'translateY(0) scale(1)';
+          if (!hideTimer) { hideTimer = setTimeout(removeToast, timeoutMs); }
+        });
+      }
     } catch (_) {}
   }
 

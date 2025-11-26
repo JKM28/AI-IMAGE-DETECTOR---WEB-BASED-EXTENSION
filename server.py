@@ -25,6 +25,9 @@ SIGHTENGINE_SECRET = os.getenv("SIGHTENGINE_SECRET")
 _BASE_DIR = os.path.dirname(__file__)
 CSV_LOG_PATH = os.path.join(_BASE_DIR, "logging_template.csv")
 JSONL_LOG_PATH = os.path.join(_BASE_DIR, "logging_log.jsonl")
+IMAGE_LOG_DIR = os.path.join(_BASE_DIR, "logged_images")
+if not os.path.exists(IMAGE_LOG_DIR):
+    os.makedirs(IMAGE_LOG_DIR, exist_ok=True)
 
 # Face detection removed (API-only classification)
 
@@ -98,6 +101,17 @@ def _format_sightengine_result(output: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         return {"status": "error", "message": f"Parse error: {e}", "raw": output}
 
+def _save_logged_image(contents: bytes, prefix: str = "img") -> Optional[str]:
+    try:
+        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+        fname = f"{prefix}_{ts}.jpg"
+        fpath = os.path.join(IMAGE_LOG_DIR, fname)
+        with open(fpath, "wb") as f:
+            f.write(contents)
+        return fpath
+    except Exception:
+        return None
+
 def sightengine_classify_url(image_url: str, models: str = "genai", timeout: int = 15) -> Dict[str, Any]:
     params = {
         "url": image_url,
@@ -160,10 +174,15 @@ async def classify_url(data: ImageURL, use_sightengine: bool = True, models: str
 
         # Prefer bytes path to compute dimensions when possible
         image_w_h = None
+        saved_image_path: Optional[str] = None
         try:
             resp = requests.get(data.url, timeout=15)
             resp.raise_for_status()
             contents = resp.content
+            try:
+                saved_image_path = _save_logged_image(contents, prefix="url")
+            except Exception:
+                saved_image_path = None
             try:
                 img = Image.open(io.BytesIO(contents)).convert("RGB")
                 image_w_h = f"{img.width}x{img.height}"
@@ -189,6 +208,7 @@ async def classify_url(data: ImageURL, use_sightengine: bool = True, models: str
                 "timestamp": datetime.utcnow().isoformat(),
                 "image_size": image_w_h,
                 "raw": se.get("raw"),
+                "saved_image_path": saved_image_path,
             }
         return {"status": "error", "message": "Sightengine classification failed"}
     except requests.exceptions.RequestException as e:
@@ -246,6 +266,10 @@ async def classify_file(
                 image_w_h = f"{image.width}x{image.height}"
             except Exception:
                 image_w_h = None
+            try:
+                saved_image_path = _save_logged_image(contents, prefix="upload")
+            except Exception:
+                saved_image_path = None
             response = {
                 "status": "success",
                 "is_fake": se.get("is_fake", False),
@@ -255,6 +279,7 @@ async def classify_file(
                 "timestamp": datetime.utcnow().isoformat(),
                 "image_size": image_w_h,
                 "raw": se.get("raw"),
+                "saved_image_path": saved_image_path,
             }
             print(f"Final response (sightengine): {response}")
             return response
